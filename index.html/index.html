@@ -776,12 +776,6 @@
     </div>
     <button id="loginBtn" class="btn btn-primary" onclick="doLogin()" style="width:100%;justify-content:center;padding:10px;margin-top:8px;font-size:14px;">دخول</button>
     <div class="login-error" id="loginError">اسم المستخدم أو كلمة المرور غير صحيحة</div>
-    <div class="login-demo">
-      <strong>مستخدمين تجريبيين:</strong><br>
-      admin / admin123 — مدير نظام<br>
-      khaled / khaled1 — مُدخل بيانات<br>
-      viewer / view1 — مشاهد تقارير
-    </div>
   </div>
 </div>
 
@@ -976,6 +970,7 @@ function mapInvoiceFromDb(r) {
     foreignSideAmount: r.foreign_side_amount, foreignSideBankName: r.foreign_side_bank_name,
     foreignSideNotes: r.foreign_side_notes, autoCompleted: r.auto_completed,
     shippingCompany: r.shipping_company, eta: r.eta, description: r.description, notes: r.notes,
+    warehouseEntryDate: r.warehouse_entry_date, blNumber: r.bl_number, acidNumber: r.acid_number,
   };
 }
 function mapInvoiceToDb(d) {
@@ -989,19 +984,20 @@ function mapInvoiceToDb(d) {
     foreign_side_amount: d.foreignSideAmount || null, foreign_side_bank_name: d.foreignSideBankName,
     foreign_side_notes: d.foreignSideNotes,
     shipping_company: d.shippingCompany, eta: d.eta || null, description: d.description, notes: d.notes,
+    warehouse_entry_date: d.warehouseEntryDate || null, bl_number: d.blNumber, acid_number: d.acidNumber,
   };
 }
 function mapPaymentFromDb(r) {
-  return { id: r.id, invoiceId: r.invoice_id, amount: r.amount, currency: r.currency, bank: r.bank, methodType: r.method_type, ref: r.ref, date: r.payment_date, notes: r.notes };
+  return { id: r.id, invoiceId: r.invoice_id, amount: r.amount, currency: r.currency, bank: r.bank, methodType: r.method_type, ref: r.ref, date: r.payment_date, notes: r.notes, exchangeRate: r.exchange_rate, amountEgp: r.amount_egp };
 }
 function mapPaymentToDb(p) {
-  return { invoice_id: p.invoiceId, amount: p.amount, currency: p.currency, bank: p.bank, method_type: p.methodType, ref: p.ref, payment_date: p.date, notes: p.notes };
+  return { invoice_id: p.invoiceId, amount: p.amount, currency: p.currency, bank: p.bank, method_type: p.methodType, ref: p.ref, payment_date: p.date, notes: p.notes, exchange_rate: p.exchangeRate || null, amount_egp: p.amountEgp || null };
 }
 function mapCostFromDb(r) {
-  return { id: r.id, invoiceId: r.invoice_id, type: r.cost_type, amount: r.amount, currency: r.currency, date: r.cost_date, bank: r.bank, notes: r.notes };
+  return { id: r.id, invoiceId: r.invoice_id, type: r.cost_type, amount: r.amount, currency: r.currency, date: r.cost_date, bank: r.bank, notes: r.notes, exchangeRate: r.exchange_rate, amountEgp: r.amount_egp };
 }
 function mapCostToDb(c) {
-  return { invoice_id: c.invoiceId, cost_type: c.type, amount: c.amount, currency: c.currency, cost_date: c.date, bank: c.bank, notes: c.notes };
+  return { invoice_id: c.invoiceId, cost_type: c.type, amount: c.amount, currency: c.currency, cost_date: c.date, bank: c.bank, notes: c.notes, exchange_rate: c.exchangeRate || null, amount_egp: c.amountEgp || null };
 }
 function mapLoginLogFromDb(r) {
   return { id: r.id, username: r.username, userName: r.user_name, role: r.role, deviceType: r.device_type, browser: r.browser, os: r.os, userAgent: r.user_agent, loggedInAt: r.logged_in_at };
@@ -1686,9 +1682,14 @@ function openInvoiceModal(id = null) {
     <div class="form-group form-full"><label>ملاحظات التحويل الخارجي</label><input type="text" id="f_foreignSideNotes" value="${inv?.foreignSideNotes||''}" placeholder="اختياري"></div>
   </div>
 
-  <div class="section-divider">بيانات الشحن</div>
-  <div class="form-grid">
+  <div class="section-divider">بيانات الشحن والمستندات الجمركية</div>
+  <div class="form-grid form-grid-3">
     <div class="form-group"><label>اسم شركة الشحن</label><input type="text" id="f_shippingCompany" value="${inv?.shippingCompany||''}" placeholder="CMA CGM / MSC / Maersk ..."></div>
+    <div class="form-group"><label>رقم بوليصة الشحن (B/L)</label><input type="text" id="f_blNumber" value="${inv?.blNumber||''}" placeholder="مثال: MEDU1234567"></div>
+    <div class="form-group"><label>رقم ACID</label><input type="text" id="f_acidNumber" value="${inv?.acidNumber||''}" placeholder="مثال: ACID-2026-XXXXXX"></div>
+  </div>
+  <div class="form-grid" style="margin-top:14px">
+    <div class="form-group"><label>تاريخ دخول الخامة للمخازن</label><input type="date" id="f_warehouseEntryDate" value="${inv?.warehouseEntryDate||''}"></div>
     <div class="form-group"><label>وصف البضاعة (تفصيلي)</label><input type="text" id="f_description" value="${inv?.description||''}" placeholder="PET Resin - 20MT"></div>
   </div>
 
@@ -1697,6 +1698,7 @@ function openInvoiceModal(id = null) {
   document.getElementById('modalFooter').innerHTML = `
     <button class="btn btn-outline" onclick="closeModal()">إلغاء</button>
     <button id="invoiceSaveBtn" class="btn btn-primary" onclick="saveInvoice()">حفظ الفاتورة</button>`;
+
 
   openModal();
   calcAdvanceAmount();
@@ -1803,6 +1805,9 @@ async function saveInvoice() {
     cashSideAmount, cashSideNotes: document.getElementById('f_cashSideNotes').value,
     foreignSideAmount, foreignSideBankName, foreignSideNotes: document.getElementById('f_foreignSideNotes').value,
     shippingCompany: document.getElementById('f_shippingCompany').value,
+    blNumber: document.getElementById('f_blNumber').value,
+    acidNumber: document.getElementById('f_acidNumber').value,
+    warehouseEntryDate: document.getElementById('f_warehouseEntryDate').value || null,
     description: document.getElementById('f_description').value,
     notes: document.getElementById('f_notes').value,
   };
@@ -1905,6 +1910,16 @@ function openInvoiceProfile(id) {
   const remaining = inv.amount - totalPaid;
   const paidPct = Math.min(totalPaid / inv.amount * 100, 100);
 
+  // Total document cost in EGP = sum of all payments converted to EGP (using each
+  // payment's own rate) + sum of all costs converted to EGP (using each cost's own rate).
+  // This reflects actual money spent, not the invoice's nominal foreign-currency value.
+  const paymentsEgpTotal = payments.reduce((s,p) => s + (p.amountEgp || (p.currency === 'EGP' ? p.amount : 0)), 0);
+  const costsEgpTotal = costs.reduce((s,c) => s + (c.amountEgp || (c.currency === 'EGP' ? c.amount : 0)), 0);
+  const totalEgpCost = paymentsEgpTotal + costsEgpTotal;
+  const paymentsMissingRate = payments.filter(p => p.currency !== 'EGP' && !p.exchangeRate).length;
+  const costsMissingRate = costs.filter(c => c.currency !== 'EGP' && !c.exchangeRate).length;
+  const missingRateCount = paymentsMissingRate + costsMissingRate;
+
   // unified ledger feed, sorted by date desc
   const feed = [
     ...payments.map(p => ({ ...p, _type: 'payment', _date: p.date })),
@@ -1945,7 +1960,23 @@ function openInvoiceProfile(id) {
     <div class="detail-item"><label>تاريخ الفاتورة</label><div class="detail-val">${inv.date}</div></div>
     <div class="detail-item"><label>شركة الشحن</label><div class="detail-val">${inv.shippingCompany||'-'}</div></div>
     <div class="detail-item"><label>تاريخ الوصول المتوقع</label><div class="detail-val">${inv.eta||'-'} ${canEdit()?`<a href="#" onclick="quickEditETA(${inv.id});return false;" style="font-size:11px;color:var(--info);margin-right:6px">تعديل</a>`:''}</div></div>
+    <div class="detail-item"><label>رقم بوليصة الشحن (B/L)</label><div class="detail-val">${inv.blNumber||'-'}</div></div>
+    <div class="detail-item"><label>رقم ACID</label><div class="detail-val">${inv.acidNumber||'-'}</div></div>
+    <div class="detail-item"><label>تاريخ دخول المخازن</label><div class="detail-val">${inv.warehouseEntryDate||'-'}</div></div>
   </div>
+
+  ${(payments.length > 0 || costs.length > 0) ? `
+  <div style="margin-top:10px;padding:14px 16px;background:var(--bg-surface);border-radius:var(--radius-sm);border:1px solid var(--border-light)">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+      <div style="font-size:12px;color:var(--text-faint)">إجمالي تكلفة المستند بالجنيه المصري (المدفوعات + كل المصاريف، كل واحدة بسعر صرفها)</div>
+      <div style="font-size:22px;font-weight:700;color:var(--gold)">${fmtMoney(totalEgpCost)} ج.م</div>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:8px;font-size:11.5px;color:var(--text-faint)">
+      <span>مدفوعات: ${fmtMoney(paymentsEgpTotal)} ج.م</span>
+      <span>مصاريف: ${fmtMoney(costsEgpTotal)} ج.م</span>
+    </div>
+    ${missingRateCount > 0 ? `<div style="margin-top:8px;font-size:11.5px;color:var(--warning)">⚠ يوجد ${missingRateCount} عملية بعملة غير مصرية بدون سعر صرف مسجَّل — غير محسوبة في الإجمالي أعلاه</div>` : ''}
+  </div>` : ''}
 
   ${(inv.cashSideAmount || inv.foreignSideAmount) ? `
   <div style="margin-top:10px;padding:12px 14px;background:var(--bg-surface);border:1px dashed var(--border-light);border-radius:var(--radius-sm)">
@@ -1972,6 +2003,12 @@ function openInvoiceProfile(id) {
   <div id="profileLedger">
     ${feed.length === 0 ? '<p style="color:var(--text-faint);text-align:center;padding:24px">لا توجد عمليات مسجلة على هذه الفاتورة بعد</p>' : feed.map(item => {
       if (item._type === 'payment') {
+        const egpInfo = item.currency !== 'EGP' && item.exchangeRate
+          ? ` · سعر الصرف: ${item.exchangeRate} · ما يعادل ${fmtMoney(item.amountEgp)} ج.م`
+          : '';
+        const rateLink = item.currency !== 'EGP' && canEdit()
+          ? ` · <a href="#" onclick="openQuickRateEdit('payment', ${item.id});return false;" style="color:var(--info)">${item.exchangeRate ? 'تعديل سعر الصرف' : '⚠ إضافة سعر الصرف'}</a>`
+          : '';
         return `<div class="ledger-item">
           <div class="ledger-icon payment">↓</div>
           <div class="ledger-body">
@@ -1979,11 +2016,17 @@ function openInvoiceProfile(id) {
               <div class="ledger-title">دفعة بنكية — ${item.bank||'-'}</div>
               <div class="ledger-amount in">${fmtMoney(item.amount)} ${item.currency}</div>
             </div>
-            <div class="ledger-meta">${PAY_METHOD_TYPES.find(m=>m.key===item.methodType)?.label||item.methodType||'-'} ${item.ref?'· مرجع: '+item.ref:''} · ${item._date}${item.notes?' · '+item.notes:''}</div>
+            <div class="ledger-meta">${PAY_METHOD_TYPES.find(m=>m.key===item.methodType)?.label||item.methodType||'-'} ${item.ref?'· مرجع: '+item.ref:''} · ${item._date}${item.notes?' · '+item.notes:''}${egpInfo}${rateLink}</div>
           </div>
           ${canEdit() ? `<button class="btn btn-ghost btn-icon" onclick="deletePaymentInline(${item.id})" title="حذف">✕</button>` : ''}
         </div>`;
       } else {
+        const egpInfoCost = item.currency !== 'EGP' && item.exchangeRate
+          ? ` · سعر الصرف: ${item.exchangeRate} · ما يعادل ${fmtMoney(item.amountEgp)} ج.م`
+          : '';
+        const rateLinkCost = item.currency !== 'EGP' && canEdit()
+          ? ` · <a href="#" onclick="openQuickRateEdit('cost', ${item.id});return false;" style="color:var(--info)">${item.exchangeRate ? 'تعديل سعر الصرف' : '⚠ إضافة سعر الصرف'}</a>`
+          : '';
         return `<div class="ledger-item">
           <div class="ledger-icon cost">↑</div>
           <div class="ledger-body">
@@ -1991,7 +2034,7 @@ function openInvoiceProfile(id) {
               <div class="ledger-title">${item.type}</div>
               <div class="ledger-amount out">${fmtMoney(item.amount)} ${item.currency}</div>
             </div>
-            <div class="ledger-meta">${item.bank?'البنك: '+item.bank+' · ':''}${item._date}${item.notes?' · '+item.notes:''}</div>
+            <div class="ledger-meta">${item.bank?'البنك: '+item.bank+' · ':''}${item._date}${item.notes?' · '+item.notes:''}${egpInfoCost}${rateLinkCost}</div>
           </div>
           ${canEdit() ? `<button class="btn btn-ghost btn-icon" onclick="deleteCostInline(${item.id})" title="حذف">✕</button>` : ''}
         </div>`;
@@ -2009,8 +2052,117 @@ function openInvoiceProfile(id) {
 }
 
 function printInvoiceProfile(id) {
-  // The modal body already contains the full profile detail; print just that content cleanly
-  window.print();
+  const inv = db.invoices.find(i => i.id === id);
+  if (!inv) return;
+  const costs = getInvoiceCosts(id);
+  const payments = getInvoicePayments(id);
+  const totalPaid = payments.reduce((s,p) => s + p.amount, 0);
+  const totalCosts = costs.reduce((s,c) => s + c.amount, 0);
+  const remaining = inv.amount - totalPaid;
+
+  const paymentsEgpTotal = payments.reduce((s,p) => s + (p.amountEgp || (p.currency === 'EGP' ? p.amount : 0)), 0);
+  const costsEgpTotal = costs.reduce((s,c) => s + (c.amountEgp || (c.currency === 'EGP' ? c.amount : 0)), 0);
+  const totalEgpCost = paymentsEgpTotal + costsEgpTotal;
+
+  const styles = `
+    body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; direction: rtl; padding: 28px; color: #000; }
+    h1 { font-size: 19px; margin: 0 0 2px; }
+    h2 { font-size: 14px; margin: 0; color: #555; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 16px; }
+    th, td { padding: 7px 10px; border-bottom: 1px solid #ddd; text-align: right; }
+    th { background: #f5f5f5; }
+    .section-divider { font-weight: 700; font-size: 13px; margin: 20px 0 10px; border-right: 3px solid #c9a861; padding-right: 10px; }
+    .header-bar { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 16px; }
+    .doc-number { font-family: monospace; font-weight: 700; background: #f0f0f0; border: 1px solid #999; padding: 3px 10px; border-radius: 4px; font-size: 12px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+    .detail-item label { display: block; font-size: 10.5px; color: #777; }
+    .detail-item div.val { font-size: 13px; font-weight: 600; }
+    .totals-box { background: #faf6ec; border: 1px solid #e0d4ad; border-radius: 6px; padding: 12px 16px; margin: 14px 0; }
+    .totals-box .big { font-size: 20px; font-weight: 700; color: #8a6d1f; }
+    .sig-section { margin-top: 50px; page-break-inside: avoid; }
+    .sig-row { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 40px; }
+    .sig-box { text-align: center; }
+    .sig-line { border-top: 1px solid #000; margin-top: 50px; padding-top: 6px; font-size: 12px; }
+    @media print { .sig-section { page-break-before: auto; } }
+  `;
+
+  const html = `
+  <div class="header-bar">
+    <div>
+      <h1>بروفايل المستند الاستيرادي</h1>
+      <h2>${inv.supplier} — ${inv.invoiceNo}</h2>
+    </div>
+    <span class="doc-number">${inv.fileNo}</span>
+  </div>
+
+  <div class="detail-grid">
+    <div class="detail-item"><label>المصنع</label><div class="val">${FACTORIES.find(f=>f.key===inv.factory)?.label||inv.factory}</div></div>
+    <div class="detail-item"><label>الصنف</label><div class="val">${inv.itemName||'-'}</div></div>
+    <div class="detail-item"><label>الكمية</label><div class="val">${inv.quantity||'-'} ${inv.unit||''}</div></div>
+    <div class="detail-item"><label>قيمة الفاتورة</label><div class="val">${fmtMoney(inv.amount)} ${inv.currency}</div></div>
+    <div class="detail-item"><label>البنك المحلي</label><div class="val">${inv.bank}</div></div>
+    <div class="detail-item"><label>نظام السداد</label><div class="val">${settlementLabel(inv)}</div></div>
+    <div class="detail-item"><label>تاريخ الفاتورة</label><div class="val">${inv.date}</div></div>
+    <div class="detail-item"><label>تاريخ الوصول المتوقع</label><div class="val">${inv.eta||'-'}</div></div>
+    <div class="detail-item"><label>الحالة</label><div class="val">${inv.status}</div></div>
+    <div class="detail-item"><label>شركة الشحن</label><div class="val">${inv.shippingCompany||'-'}</div></div>
+    <div class="detail-item"><label>رقم بوليصة الشحن (B/L)</label><div class="val">${inv.blNumber||'-'}</div></div>
+    <div class="detail-item"><label>رقم ACID</label><div class="val">${inv.acidNumber||'-'}</div></div>
+    <div class="detail-item"><label>تاريخ دخول المخازن</label><div class="val">${inv.warehouseEntryDate||'-'}</div></div>
+    <div class="detail-item"><label>بلد المنشأ</label><div class="val">${inv.origin||'-'}</div></div>
+  </div>
+
+  ${inv.description ? `<p style="font-size:12px;color:#555;margin-bottom:14px">${inv.description}</p>` : ''}
+
+  <div class="totals-box">
+    <div style="display:flex;justify-content:space-between">
+      <span>مدفوع: ${fmtMoney(totalPaid)} ${inv.currency}</span>
+      <span>متبقي: ${fmtMoney(remaining)} ${inv.currency}</span>
+    </div>
+    <div style="margin-top:8px">إجمالي تكلفة المستند بالجنيه المصري: <span class="big">${fmtMoney(totalEgpCost)} ج.م</span></div>
+  </div>
+
+  <div class="section-divider">سجل المدفوعات البنكية (${payments.length})</div>
+  <table>
+    <thead><tr><th>البنك</th><th>المبلغ</th><th>سعر الصرف</th><th>ما يعادل بالجنيه</th><th>التاريخ</th><th>المرجع</th></tr></thead>
+    <tbody>
+      ${payments.length === 0 ? '<tr><td colspan="6" style="text-align:center;color:#999">لا توجد مدفوعات</td></tr>' : payments.map(p => `
+        <tr><td>${p.bank||'-'}</td><td>${fmtMoney(p.amount)} ${p.currency}</td><td>${p.currency==='EGP'?'-':(p.exchangeRate||'-')}</td><td>${p.currency==='EGP'?'-':(p.amountEgp?fmtMoney(p.amountEgp):'-')}</td><td>${p.date}</td><td>${p.ref||'-'}</td></tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div class="section-divider">المصاريف المرتبطة (${costs.length})</div>
+  <table>
+    <thead><tr><th>النوع</th><th>المبلغ</th><th>سعر الصرف</th><th>ما يعادل بالجنيه</th><th>البنك</th><th>التاريخ</th></tr></thead>
+    <tbody>
+      ${costs.length === 0 ? '<tr><td colspan="6" style="text-align:center;color:#999">لا توجد مصاريف</td></tr>' : costs.map(c => `
+        <tr><td>${c.type}</td><td>${fmtMoney(c.amount)} ${c.currency}</td><td>${c.currency==='EGP'?'-':(c.exchangeRate||'-')}</td><td>${c.currency==='EGP'?'-':(c.amountEgp?fmtMoney(c.amountEgp):'-')}</td><td>${c.bank||'-'}</td><td>${c.date}</td></tr>
+      `).join('')}
+    </tbody>
+  </table>
+
+  <div class="sig-section">
+    <div class="section-divider">قسم التجارة الخارجية</div>
+    <div class="sig-row">
+      <div class="sig-box"><div class="sig-line">الاسم والتوقيع</div></div>
+      <div class="sig-box"><div class="sig-line">التاريخ</div></div>
+    </div>
+  </div>
+
+  <div class="sig-section">
+    <div class="section-divider">قسم المراجعة</div>
+    <div class="sig-row">
+      <div class="sig-box"><div class="sig-line">الاسم والتوقيع</div></div>
+      <div class="sig-box"><div class="sig-line">التاريخ</div></div>
+    </div>
+  </div>`;
+
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>${inv.fileNo}</title><style>${styles}</style></head><body>${html}</body></html>`);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => { printWindow.print(); }, 300);
 }
 
 function closeProfileModal() {
@@ -2032,13 +2184,28 @@ function openPaymentInline(invoiceId) {
     <div class="modal-header"><span class="modal-header-title">إضافة دفعة بنكية — ${inv.fileNo}</span><button class="modal-close" onclick="document.getElementById('subModalOverlay').remove()">✕</button></div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-group"><label>المبلغ *</label><input type="number" id="ip_amount" placeholder="0"></div>
-        <div class="form-group"><label>العملة *</label><select id="ip_currency">${CURRENCIES.map(c=>`<option value="${c}" ${inv.currency===c?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="form-group"><label>المبلغ *</label><input type="number" id="ip_amount" placeholder="0" oninput="calcInlinePaymentEgp()"></div>
+        <div class="form-group"><label>العملة *</label><select id="ip_currency" onchange="onInlinePaymentCurrencyChange()">${CURRENCIES.map(c=>`<option value="${c}" ${inv.currency===c?'selected':''}>${c}</option>`).join('')}</select></div>
         <div class="form-group"><label>البنك *</label><select id="ip_bank">${BANKS.map(b=>`<option value="${b}" ${inv.bank===b?'selected':''}>${b}</option>`).join('')}</select></div>
         <div class="form-group"><label>طريقة الدفع</label><select id="ip_method">${PAY_METHOD_TYPES.map(m=>`<option value="${m.key}" ${m.key==='bank_transfer'?'selected':''}>${m.label}</option>`).join('')}</select></div>
         <div class="form-group"><label>رقم المرجع / التحويل</label><input type="text" id="ip_ref" placeholder="TRF-2025-XXXX"></div>
         <div class="form-group"><label>تاريخ الدفع *</label><input type="date" id="ip_date" value="${new Date().toISOString().split('T')[0]}"></div>
       </div>
+
+      <div class="sub-fields show" id="ip_rateFields" style="margin-top:12px">
+        <div class="form-grid">
+          <div class="form-group">
+            <label id="ip_rateLabel">سعر الصرف وقت التحويل (1 ${inv.currency} = ? جنيه)</label>
+            <input type="number" id="ip_exchangeRate" step="0.0001" placeholder="مثال: 50.25" oninput="calcInlinePaymentEgp()">
+          </div>
+          <div class="form-group">
+            <label>القيمة بالجنيه المصري (تُحسب تلقائيًا)</label>
+            <input type="text" id="ip_amountEgpDisplay" readonly placeholder="0">
+          </div>
+        </div>
+        <div class="field-hint">سعر الصرف هذا يُستخدم لحساب إجمالي تكلفة المستند بالجنيه المصري في تقارير البنوك.</div>
+      </div>
+
       <div class="form-group" style="margin-top:12px"><label>ملاحظات</label><textarea id="ip_notes"></textarea></div>
     </div>
     <div class="modal-footer">
@@ -2047,19 +2214,52 @@ function openPaymentInline(invoiceId) {
     </div>
   </div>`;
   document.body.appendChild(overlay);
+  onInlinePaymentCurrencyChange();
+}
+
+function onInlinePaymentCurrencyChange() {
+  const cur = document.getElementById('ip_currency').value;
+  const rateFields = document.getElementById('ip_rateFields');
+  const rateLabel = document.getElementById('ip_rateLabel');
+  if (cur === 'EGP') {
+    rateFields.classList.remove('show');
+    document.getElementById('ip_exchangeRate').value = '';
+  } else {
+    rateFields.classList.add('show');
+    rateLabel.textContent = `سعر الصرف وقت التحويل (1 ${cur} = ? جنيه)`;
+  }
+  calcInlinePaymentEgp();
+}
+
+function calcInlinePaymentEgp() {
+  const cur = document.getElementById('ip_currency').value;
+  const amount = parseFloat(document.getElementById('ip_amount').value) || 0;
+  const display = document.getElementById('ip_amountEgpDisplay');
+  if (cur === 'EGP') { display.value = fmtMoney(amount); return; }
+  const rate = parseFloat(document.getElementById('ip_exchangeRate').value) || 0;
+  display.value = rate ? fmtMoney(amount * rate) : '';
 }
 
 async function saveInlinePayment(invoiceId) {
   const amount = parseFloat(document.getElementById('ip_amount').value);
   if (!amount) { toast('يرجى إدخال المبلغ','error'); return; }
+  const currency = document.getElementById('ip_currency').value;
+  let exchangeRate = null, amountEgp = null;
+  if (currency === 'EGP') {
+    amountEgp = amount;
+  } else {
+    exchangeRate = parseFloat(document.getElementById('ip_exchangeRate').value) || null;
+    if (!exchangeRate) { toast('يرجى إدخال سعر الصرف لهذه الدفعة','error'); return; }
+    amountEgp = amount * exchangeRate;
+  }
   const payload = {
-    invoiceId, amount,
-    currency: document.getElementById('ip_currency').value,
+    invoiceId, amount, currency,
     bank: document.getElementById('ip_bank').value,
     methodType: document.getElementById('ip_method').value,
     ref: document.getElementById('ip_ref').value,
     date: document.getElementById('ip_date').value,
     notes: document.getElementById('ip_notes').value,
+    exchangeRate, amountEgp,
   };
 
   if (supabaseClient) {
@@ -2086,6 +2286,72 @@ async function deletePaymentInline(id) {
   refreshProfile();
 }
 
+// ============================================
+// QUICK EXCHANGE RATE EDIT — small popup to add/edit the rate on an
+// already-existing payment or cost, without opening a full edit form.
+// Useful especially for the auto-created advance payment, which has
+// no rate set at creation time.
+// ============================================
+function openQuickRateEdit(kind, id) {
+  const record = kind === 'payment' ? db.payments.find(p => p.id === id) : db.costs.find(c => c.id === id);
+  if (!record) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'quickRateOverlay';
+  overlay.className = 'modal-overlay open';
+  overlay.style.zIndex = '320';
+  overlay.innerHTML = `
+  <div class="modal narrow" style="max-width:420px">
+    <div class="modal-header"><span class="modal-header-title">سعر الصرف</span><button class="modal-close" onclick="document.getElementById('quickRateOverlay').remove()">✕</button></div>
+    <div class="modal-body">
+      <div class="field-hint" style="margin-bottom:10px">${fmtMoney(record.amount)} ${record.currency} — أدخل سعر الصرف وقت هذه العملية</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>سعر الصرف (1 ${record.currency} = ? جنيه)</label>
+          <input type="number" id="qr_rate" step="0.0001" value="${record.exchangeRate||''}" placeholder="مثال: 50.25" oninput="calcQuickRateEgp(${record.amount})">
+        </div>
+        <div class="form-group">
+          <label>القيمة بالجنيه المصري</label>
+          <input type="text" id="qr_egpDisplay" readonly value="${record.amountEgp?fmtMoney(record.amountEgp):''}">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="document.getElementById('quickRateOverlay').remove()">إلغاء</button>
+      <button class="btn btn-primary" onclick="saveQuickRateEdit('${kind}', ${id})">حفظ سعر الصرف</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+function calcQuickRateEgp(amount) {
+  const rate = parseFloat(document.getElementById('qr_rate').value) || 0;
+  document.getElementById('qr_egpDisplay').value = rate ? fmtMoney(amount * rate) : '';
+}
+
+async function saveQuickRateEdit(kind, id) {
+  const rate = parseFloat(document.getElementById('qr_rate').value);
+  if (!rate) { toast('يرجى إدخال سعر الصرف','error'); return; }
+
+  const table = kind === 'payment' ? 'payments' : 'costs';
+  const list = kind === 'payment' ? db.payments : db.costs;
+  const record = list.find(r => r.id === id);
+  if (!record) return;
+
+  const amountEgp = record.amount * rate;
+
+  if (supabaseClient) {
+    const { error } = await supabaseClient.from(table).update({ exchange_rate: rate, amount_egp: amountEgp }).eq('id', id);
+    if (error) { toast('فشل حفظ سعر الصرف','error'); console.error(error); return; }
+  }
+  record.exchangeRate = rate;
+  record.amountEgp = amountEgp;
+
+  document.getElementById('quickRateOverlay').remove();
+  toast('تم حفظ سعر الصرف','success');
+  refreshProfile();
+}
+
 // ---- inline cost add (inside profile) ----
 function openCostInline(invoiceId) {
   const inv = db.invoices.find(i => i.id === invoiceId);
@@ -2099,12 +2365,26 @@ function openCostInline(invoiceId) {
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-group"><label>نوع المصروف *</label><select id="ic_type">${COST_TYPES.map(t=>`<option value="${t}">${t}</option>`).join('')}</select></div>
-        <div class="form-group"><label>المبلغ *</label><input type="number" id="ic_amount" placeholder="0"></div>
-        <div class="form-group"><label>العملة *</label><select id="ic_currency">${CURRENCIES.map(c=>`<option value="${c}" ${inv.currency===c?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="form-group"><label>المبلغ *</label><input type="number" id="ic_amount" placeholder="0" oninput="calcInlineCostEgp()"></div>
+        <div class="form-group"><label>العملة *</label><select id="ic_currency" onchange="onInlineCostCurrencyChange()">${CURRENCIES.map(c=>`<option value="${c}" ${inv.currency===c?'selected':''}>${c}</option>`).join('')}</select></div>
         <div class="form-group"><label>البنك المسحوب منه *</label><select id="ic_bank">${BANKS.map(b=>`<option value="${b}" ${inv.bank===b?'selected':''}>${b}</option>`).join('')}</select></div>
         <div class="form-group"><label>التاريخ *</label><input type="date" id="ic_date" value="${new Date().toISOString().split('T')[0]}"></div>
       </div>
       <div class="field-hint" style="margin-top:4px">البنك الافتراضي هو بنك الفاتورة — غيّره لو المصروف خرج من بنك آخر</div>
+
+      <div class="sub-fields show" id="ic_rateFields" style="margin-top:12px">
+        <div class="form-grid">
+          <div class="form-group">
+            <label id="ic_rateLabel">سعر الصرف وقت الدفع (1 ${inv.currency} = ? جنيه)</label>
+            <input type="number" id="ic_exchangeRate" step="0.0001" placeholder="مثال: 50.25" oninput="calcInlineCostEgp()">
+          </div>
+          <div class="form-group">
+            <label>القيمة بالجنيه المصري (تُحسب تلقائيًا)</label>
+            <input type="text" id="ic_amountEgpDisplay" readonly placeholder="0">
+          </div>
+        </div>
+      </div>
+
       <div class="form-group" style="margin-top:12px"><label>ملاحظات</label><textarea id="ic_notes"></textarea></div>
       ${isAdmin() ? `<div class="field-hint" style="margin-top:8px">تقدر تضيف نوع مصروف جديد من إعدادات النظام</div>` : ''}
     </div>
@@ -2114,18 +2394,51 @@ function openCostInline(invoiceId) {
     </div>
   </div>`;
   document.body.appendChild(overlay);
+  onInlineCostCurrencyChange();
+}
+
+function onInlineCostCurrencyChange() {
+  const cur = document.getElementById('ic_currency').value;
+  const rateFields = document.getElementById('ic_rateFields');
+  const rateLabel = document.getElementById('ic_rateLabel');
+  if (cur === 'EGP') {
+    rateFields.classList.remove('show');
+    document.getElementById('ic_exchangeRate').value = '';
+  } else {
+    rateFields.classList.add('show');
+    rateLabel.textContent = `سعر الصرف وقت الدفع (1 ${cur} = ? جنيه)`;
+  }
+  calcInlineCostEgp();
+}
+
+function calcInlineCostEgp() {
+  const cur = document.getElementById('ic_currency').value;
+  const amount = parseFloat(document.getElementById('ic_amount').value) || 0;
+  const display = document.getElementById('ic_amountEgpDisplay');
+  if (cur === 'EGP') { display.value = fmtMoney(amount); return; }
+  const rate = parseFloat(document.getElementById('ic_exchangeRate').value) || 0;
+  display.value = rate ? fmtMoney(amount * rate) : '';
 }
 
 async function saveInlineCost(invoiceId) {
   const amount = parseFloat(document.getElementById('ic_amount').value);
   if (!amount) { toast('يرجى إدخال المبلغ','error'); return; }
+  const currency = document.getElementById('ic_currency').value;
+  let exchangeRate = null, amountEgp = null;
+  if (currency === 'EGP') {
+    amountEgp = amount;
+  } else {
+    exchangeRate = parseFloat(document.getElementById('ic_exchangeRate').value) || null;
+    if (!exchangeRate) { toast('يرجى إدخال سعر الصرف لهذا المصروف','error'); return; }
+    amountEgp = amount * exchangeRate;
+  }
   const payload = {
-    invoiceId, amount,
+    invoiceId, amount, currency,
     type: document.getElementById('ic_type').value,
-    currency: document.getElementById('ic_currency').value,
     bank: document.getElementById('ic_bank').value,
     date: document.getElementById('ic_date').value,
     notes: document.getElementById('ic_notes').value,
+    exchangeRate, amountEgp,
   };
 
   if (supabaseClient) {
@@ -2212,10 +2525,12 @@ function showAllBanksView() {
       const list = invs.filter(i => i.bank === b && i.currency === cur);
       if (list.length) {
         const ids = list.map(i=>i.id);
+        const curPayments = db.payments.filter(p => p.bank === b && p.currency === cur && ids.includes(p.invoiceId));
         totalsByBankCurrency[b + '|' + cur] = {
           bank: b, cur,
           invoiced: list.reduce((s,i)=>s+i.amount,0),
-          paid: db.payments.filter(p => p.bank === b && p.currency === cur && ids.includes(p.invoiceId)).reduce((s,p)=>s+p.amount,0),
+          paid: curPayments.reduce((s,p)=>s+p.amount,0),
+          paidEgp: cur === 'EGP' ? null : curPayments.reduce((s,p)=>s+(p.amountEgp||0),0),
           count: list.length,
         };
       }
@@ -2225,11 +2540,11 @@ function showAllBanksView() {
   document.getElementById('bankDetailArea').innerHTML = `
   <div class="section-divider">ملخص كل البنوك حسب العملة</div>
   <table>
-    <thead><tr><th>البنك</th><th>العملة</th><th>عدد الفواتير</th><th>إجمالي الفواتير</th><th>إجمالي المدفوع</th></tr></thead>
+    <thead><tr><th>البنك</th><th>العملة</th><th>عدد الفواتير</th><th>إجمالي الفواتير</th><th>إجمالي المدفوع</th><th>ما يعادل بالجنيه المصري</th></tr></thead>
     <tbody>
-      ${Object.keys(totalsByBankCurrency).length === 0 ? '<tr><td colspan="5" style="text-align:center;color:var(--text-faint)">لا توجد بيانات</td></tr>' : ''}
+      ${Object.keys(totalsByBankCurrency).length === 0 ? '<tr><td colspan="6" style="text-align:center;color:var(--text-faint)">لا توجد بيانات</td></tr>' : ''}
       ${Object.values(totalsByBankCurrency).sort((a,b)=>a.bank.localeCompare(b.bank)).map(d => `
-        <tr><td><strong>${d.bank}</strong></td><td><span class="badge badge-currency">${d.cur}</span></td><td>${d.count}</td><td>${fmtMoney(d.invoiced)}</td><td style="color:var(--success)">${fmtMoney(d.paid)}</td></tr>
+        <tr><td><strong>${d.bank}</strong></td><td><span class="badge badge-currency">${d.cur}</span></td><td>${d.count}</td><td>${fmtMoney(d.invoiced)}</td><td style="color:var(--success)">${fmtMoney(d.paid)}</td><td style="color:var(--gold)">${d.cur==='EGP'?'-':fmtMoney(d.paidEgp)}</td></tr>
       `).join('')}
     </tbody>
   </table>
@@ -2291,10 +2606,13 @@ function showBankDetail(bank) {
 
   const totalsByCurrency = {};
   CURRENCIES.forEach(cur => {
+    const curPayments = payments.filter(p => p.currency === cur);
     totalsByCurrency[cur] = {
       invoiced: invs.filter(i => i.currency === cur).reduce((s,i)=>s+i.amount,0),
-      paid: payments.filter(p => p.currency === cur).reduce((s,p)=>s+p.amount,0),
+      paid: curPayments.reduce((s,p)=>s+p.amount,0),
       costs: costs.filter(co => co.currency === cur).reduce((s,co)=>s+co.amount,0),
+      paidEgp: cur === 'EGP' ? null : curPayments.reduce((s,p)=>s+(p.amountEgp||0),0),
+      paidMissingRate: cur === 'EGP' ? 0 : curPayments.filter(p => !p.exchangeRate).length,
     };
   });
 
@@ -2315,6 +2633,7 @@ function showBankDetail(bank) {
         <div class="cc-label">${cur}</div>
         <div class="cc-value">${fmtMoney(d.invoiced)}</div>
         <div class="cc-sub"><span>مدفوع ${fmtMoney(d.paid)}</span><span style="color:var(--warning)">مصاريف ${fmtMoney(d.costs)}</span></div>
+        ${cur !== 'EGP' ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:11px;color:var(--gold)">≈ ${fmtMoney(d.paidEgp)} ج.م${d.paidMissingRate>0?` <span style="color:var(--warning)">(${d.paidMissingRate} بدون ريت)</span>`:''}</div>` : ''}
       </div>`;
     }).join('') || '<p style="color:var(--text-faint)">لا توجد عمليات على هذا البنك</p>'}
   </div>
@@ -2763,14 +3082,21 @@ function renderBankPaymentsReport() {
   const totalsByCurrency = {};
   CURRENCIES.forEach(cur => {
     const list = rows.filter(p => p.currency === cur);
-    if (list.length) totalsByCurrency[cur] = { amount: list.reduce((s,p)=>s+p.amount,0), count: list.length };
+    if (list.length) totalsByCurrency[cur] = {
+      amount: list.reduce((s,p)=>s+p.amount,0), count: list.length,
+      egp: cur === 'EGP' ? null : list.reduce((s,p)=>s+(p.amountEgp||0),0),
+      missingRate: cur === 'EGP' ? 0 : list.filter(p => !p.exchangeRate).length,
+    };
   });
 
   const totalsByBank = {};
   BANKS.forEach(b => {
     CURRENCIES.forEach(cur => {
       const list = rows.filter(p => p.bank === b && p.currency === cur);
-      if (list.length) totalsByBank[b + '|' + cur] = { bank: b, cur, amount: list.reduce((s,p)=>s+p.amount,0), count: list.length };
+      if (list.length) totalsByBank[b + '|' + cur] = {
+        bank: b, cur, amount: list.reduce((s,p)=>s+p.amount,0), count: list.length,
+        egp: cur === 'EGP' ? null : list.reduce((s,p)=>s+(p.amountEgp||0),0),
+      };
     });
   });
 
@@ -2790,21 +3116,22 @@ function renderBankPaymentsReport() {
       <div style="background:var(--bg-surface);border-radius:var(--radius-sm);padding:10px 16px">
         <div style="font-size:11px;color:var(--text-faint)">${cur} — ${d.count} دفعة</div>
         <div style="font-size:18px;font-weight:700">${fmtMoney(d.amount)}</div>
+        ${cur !== 'EGP' ? `<div style="font-size:11px;color:var(--gold);margin-top:4px">≈ ${fmtMoney(d.egp)} ج.م${d.missingRate>0?` <span style="color:var(--warning)">(${d.missingRate} بدون ريت)</span>`:''}</div>` : ''}
       </div>`).join('')}
   </div>
 
   <div class="section-divider">إجمالي المدفوعات حسب البنك والعملة</div>
   <table>
-    <thead><tr><th>البنك</th><th>العملة</th><th>عدد الدفعات</th><th>الإجمالي</th></tr></thead>
+    <thead><tr><th>البنك</th><th>العملة</th><th>عدد الدفعات</th><th>الإجمالي</th><th>ما يعادل بالجنيه</th></tr></thead>
     <tbody>
-      ${Object.keys(totalsByBank).length === 0 ? '<tr><td colspan="4" style="text-align:center;color:var(--text-faint)">لا بيانات</td></tr>' : ''}
-      ${Object.values(totalsByBank).sort((a,b)=>a.bank.localeCompare(b.bank)).map(d => `<tr><td><strong>${d.bank}</strong></td><td><span class="badge badge-currency">${d.cur}</span></td><td>${d.count}</td><td>${fmtMoney(d.amount)}</td></tr>`).join('')}
+      ${Object.keys(totalsByBank).length === 0 ? '<tr><td colspan="5" style="text-align:center;color:var(--text-faint)">لا بيانات</td></tr>' : ''}
+      ${Object.values(totalsByBank).sort((a,b)=>a.bank.localeCompare(b.bank)).map(d => `<tr><td><strong>${d.bank}</strong></td><td><span class="badge badge-currency">${d.cur}</span></td><td>${d.count}</td><td>${fmtMoney(d.amount)}</td><td style="color:var(--gold)">${d.cur==='EGP'?'-':fmtMoney(d.egp)}</td></tr>`).join('')}
     </tbody>
   </table>
 
   <div class="section-divider">تفاصيل المدفوعات (${rows.length})</div>
   ${rows.length === 0 ? '<p style="color:var(--text-faint);text-align:center;padding:16px">لا توجد مدفوعات مطابقة</p>' : collapsibleTable('rptBankPayments',
-    '<th>رقم الملف</th><th>التاريخ</th><th>البنك</th><th>المبلغ</th><th>الطريقة</th><th>المرجع</th>',
+    '<th>رقم الملف</th><th>التاريخ</th><th>البنك</th><th>المبلغ</th><th>سعر الصرف</th><th>ما يعادل بالجنيه</th><th>الطريقة</th><th>المرجع</th>',
     rows.map(p => {
       const inv = db.invoices.find(i => i.id === p.invoiceId);
       return `<tr class="clickable" onclick="openInvoiceProfile(${inv?inv.id:0})">
@@ -2812,6 +3139,8 @@ function renderBankPaymentsReport() {
         <td>${p.date||'-'}</td>
         <td>${p.bank||'-'}</td>
         <td><strong>${fmtMoney(p.amount)} ${p.currency}</strong></td>
+        <td>${p.currency==='EGP'?'-':(p.exchangeRate||'-')}</td>
+        <td style="color:var(--gold)">${p.currency==='EGP'?'-':(p.amountEgp?fmtMoney(p.amountEgp):'-')}</td>
         <td>${PAY_METHOD_TYPES.find(m=>m.key===p.methodType)?.label||'-'}</td>
         <td style="font-size:12px;color:var(--text-faint)">${p.ref||'-'}</td>
       </tr>`;
