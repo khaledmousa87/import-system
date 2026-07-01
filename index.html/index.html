@@ -1794,7 +1794,17 @@ function openInvoiceModal(id = null) {
 
 function onFactoryChange() {
   if (editingId) return;
-  document.getElementById('f_fileNo').value = genFileNo(document.getElementById('f_factory').value);
+  const factory = document.getElementById('f_factory').value;
+  const fileNoInput = document.getElementById('f_fileNo');
+  const current = fileNoInput.value || '';
+  const newPrefix = factory === 'lotus' ? 'LOTUS-IMP' : 'KRNO-IMP';
+  // نبدّل اسم المصنع فقط (البادئة) ونحافظ على السنة والتسلسل كما هما
+  const match = current.match(/-(\d{4}-\d+)$/);
+  if (match) {
+    fileNoInput.value = `${newPrefix}-${match[1]}`;
+  } else {
+    fileNoInput.value = genFileNo(factory);
+  }
 }
 
 function onItemCategoryChange() {
