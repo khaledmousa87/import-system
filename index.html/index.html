@@ -1325,8 +1325,16 @@ function closeMoreSheet() { document.getElementById('moreSheetOverlay').classLis
 function genFileNo(factory) {
   const year = new Date().getFullYear();
   const prefix = factory === 'lotus' ? 'LOTUS-IMP' : 'KRNO-IMP';
-  const existing = db.invoices.filter(i => i.factory === factory && i.fileNo.includes(String(year)));
-  const num = existing.length + 1;
+  const existing = db.invoices.filter(i => i.factory === factory && i.fileNo && i.fileNo.includes(String(year)));
+  let maxNum = 0;
+  existing.forEach(i => {
+    const m = i.fileNo.match(/-(\d+)$/);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n > maxNum) maxNum = n;
+    }
+  });
+  const num = maxNum + 1;
   return `${prefix}-${year}-${String(num).padStart(3,'0')}`;
 }
 
